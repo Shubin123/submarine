@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Finite Volume vs. Lattice Boltzmann</title>
+    <style>
+      :root { color-scheme: light dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+      body { margin: 0; background: #f6f8fb; color: #172033; }
+      main { max-width: 850px; margin: 0 auto; padding: 4rem 1.5rem 5rem; }
+      h1 { font-size: clamp(2rem, 6vw, 4rem); letter-spacing: -.05em; margin: 0 0 1rem; }
+      h2 { margin-top: 2.5rem; }
+      .lede { font-size: 1.25rem; line-height: 1.55; color: #42516c; max-width: 50rem; }
+      .card { margin: 2rem 0; padding: 1.5rem; border-radius: 14px; background: white; box-shadow: 0 4px 24px #17203312; }
+      a { color: #0759bf; } li { line-height: 1.6; margin: .45rem 0; }
+      @media (prefers-color-scheme: dark) { body { background: #111827; color: #e5e7eb; } .lede { color: #c0cadb; } .card { background: #1f2937; } a { color: #82b7ff; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p>CFD research note · 2026-09-23</p>
+      <h1>Finite Volume vs.<br>Lattice Boltzmann</h1>
+      <p class="lede">A practical choice framework for vehicle-flow simulation and a fair plan for connecting validated CFD to Gazebo.</p>
+      <section class="card">
+        <h2>Bottom line</h2>
+        <p>Begin with a finite-volume baseline for the submarine hull. Evaluate LBM on the same low-Mach, single-phase conditions only after matching error and refinement criteria. Use Gazebo for robot dynamics and control integration—not as the CFD solver.</p>
+      </section>
+      <h2>What this contains</h2>
+      <ul>
+        <li>A method and risk comparison</li>
+        <li>OpenFOAM, OpenLB, Palabos, AeroToolbox, and Gazebo roles</li>
+        <li>A matched-accuracy benchmark plan and acceptance criteria</li>
+      </ul>
+      <p><a href="../research.md">Read the full Markdown research note</a> · <a href="../README.md">Repository README</a></p>
+    </main>
+  </body>
+</html>
