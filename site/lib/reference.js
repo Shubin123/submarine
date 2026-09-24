@@ -15,6 +15,12 @@ export const GHIA_RE100_V = [
   [0.0625, 0.09233], [0.0, 0.0],
 ].map(([x, v]) => ({ x, v }));
 
+// Schäfer & Turek (1996) benchmark 2D-1 (Re = 20, steady): reference bands.
+export const TUREK_2D1 = {
+  cd: [5.57, 5.59],
+  cl: [0.0104, 0.011],
+};
+
 // Schäfer & Turek (1996) benchmark 2D-2 (Re = 100, unsteady): reference bands.
 export const TUREK_2D2 = {
   cdMax: [3.22, 3.24],

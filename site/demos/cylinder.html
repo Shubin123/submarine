@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LBM Cylinder Wake</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <style>#field { image-rendering: auto; cursor: crosshair; }</style>
+</head>
+<body>
+<main>
+  <p class="eyebrow">Benchmark step 1 · flow around a cylinder</p>
+  <h1>Cylinder wake with lattice Boltzmann</h1>
+  <p class="lede">The Schäfer–Turek (1996) channel: parabolic inflow, a cylinder slightly off-centre, no-slip walls. Drag and lift come from momentum exchange on the bounce-back links, and are checked against the published reference bands. Click or drag on the field to add solid obstacles.</p>
+
+  <div class="controls">
+    <label>Diameter (lattice nodes)
+      <select id="d"><option value="8">8 (fast)</option><option value="10" selected>10</option><option value="14">14</option><option value="20">20 (slow, closer to ref.)</option></select></label>
+    <label>Case
+      <select id="re"><option value="20">2D-1 · Re = 20 (steady)</option><option value="100" selected>2D-2 · Re = 100 (vortex street)</option><option value="200">Re = 200 (no reference)</option></select></label>
+    <label>Field
+      <select id="view"><option value="vort" selected>Vorticity</option><option value="speed">Speed</option></select></label>
+    <label>Steps per frame
+      <input id="spf" type="range" min="1" max="40" value="12"></label>
+    <button id="toggle" class="primary">Pause</button>
+    <button id="reset">Restart</button>
+    <button id="export">Export coefficients (JSON)</button>
+  </div>
+
+  <section class="card">
+    <canvas id="field" class="field" aria-label="Flow field"></canvas>
+    <div class="colorbar" style="margin-top:.5rem"><span id="barLo"></span><i id="bar"></i><span id="barHi"></span></div>
+    <div class="stats" id="stats"></div>
+    <p class="note" id="verdict"></p>
+  </section>
+
+  <h2>Force history</h2>
+  <div class="grid two">
+    <section class="card"><h3>Drag coefficient C<sub>D</sub></h3><div id="chartCd"></div></section>
+    <section class="card"><h3>Lift coefficient C<sub>L</sub></h3><div id="chartCl"></div></section>
+  </div>
+  <p class="note">Shaded band = Schäfer–Turek reference range where one exists. Time is convective: t* = t·Ū/D. A coarse, staircased cylinder under BGK typically lands within ~5–15% of the reference; refining D moves it closer — which is exactly the refinement evidence the research note asks for.</p>
+</main>
+<script type="module">
+import { chrome, drawField, LUT, rampCss, lineChart, download } from '../assets/ui.js';
+import { cylinderChannel } from '../lib/lbm.js';
+import { TUREK_2D1, TUREK_2D2 } from '../lib/reference.js';
+chrome('..');
+const $ = (id) => document.getElementById(id);
+let sim, running = true, hist, lastChart = 0, crossings, prevCl, field;
+
+function reset() {
+  const d = +$('d').value, re = +$('re').value;
+  // Keep τ comfortably above 0.5: raise the lattice velocity at coarse resolution.
+  const uMax = re >= 100 ? (d <= 10 ? 0.15 : 0.1) : 0.1;
+  sim = cylinderChannel({ d, re, uMax });
+  hist = []; crossings = []; prevCl = 0;
+  field = new Float64Array(sim.nx * sim.ny);
+}
+
+function coefficients() {
+  const { uMean, d } = sim.meta;
+  const q = 0.5 * uMean * uMean * d;
+  return [sim.bodyForce[0] / q, sim.bodyForce[1] / q];
+}
+
+const stat = (k, v) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`;
+const inBand = (v, [a, b]) => {
+  const mid = (a + b) / 2, err = Math.abs(v - mid) / mid;
+  const cls = v >= a && v <= b ? 'good' : err < 0.1 ? 'warn' : 'bad';
+  const icon = cls === 'good' ? '✓' : cls === 'warn' ? '▲' : '✕';
+  return `<span class="status ${cls}">${icon} ${v.toFixed(3)}</span> <span class="note">(ref ${a}–${b}, ${(100 * (v - mid) / mid).toFixed(1)}%)</span>`;
+};
+
+function summary() {
+  const { uMean, d, re } = sim.meta;
+  const T = d / uMean;
+  const tStar = sim.time / T;
+  const recent = hist.filter((h) => h[0] > tStar - 8);
+  const cdMax = Math.max(...recent.map((h) => h[1]));
+  const cdMean = recent.reduce((s, h) => s + h[1], 0) / Math.max(recent.length, 1);
+  const clMax = Math.max(...recent.map((h) => h[2]));
+  let st = NaN;
+  if (crossings.length >= 4) {
+    const c = crossings.slice(-4);
+    st = (3 / (c[3] - c[0])) * T;
+  }
+  return { re, tStar, cdMax, cdMean, clMax, st, cd: hist.at(-1)?.[1] ?? NaN, cl: hist.at(-1)?.[2] ?? NaN };
+}
+
+function render(now) {
+  sim.moments();
+  const view = $('view').value;
+  if (view === 'vort') {
+    sim.vorticity(field);
+    const s = (sim.meta.uMean / sim.meta.d) * 4;
+    drawField($('field'), field, sim.nx, sim.ny, { lut: LUT.diverging, min: -s, max: s, solid: sim.solid });
+    $('barLo').textContent = 'ω < 0 (clockwise)'; $('barHi').textContent = 'ω > 0';
+    $('bar').style.background = rampCss('diverging');
+  } else {
+    for (let i = 0; i < field.length; i++) field[i] = Math.hypot(sim.ux[i], sim.uy[i]) / sim.meta.uMax;
+    drawField($('field'), field, sim.nx, sim.ny, { lut: LUT.sequential, min: 0, max: 1.3, solid: sim.solid });
+    $('barLo').textContent = '|u| 0'; $('barHi').textContent = '1.3 U_max';
+    $('bar').style.background = rampCss('sequential');
+  }
+  if (now - lastChart < 300 || hist.length < 2) return;
+  lastChart = now;
+  const s = summary();
+  $('stats').innerHTML = stat('Re', s.re) + stat('Lattice', `${sim.nx}×${sim.ny}`) + stat('τ', sim.tau.toFixed(3))
+    + stat('Steps', sim.time.toLocaleString()) + stat('t* (convective)', s.tStar.toFixed(1))
+    + stat('C_D now', s.cd.toFixed(3)) + stat('C_L now', s.cl.toFixed(3)) + stat('Strouhal', Number.isFinite(s.st) ? s.st.toFixed(3) : '—');
+  const v = [];
+  if (s.re === 100) {
+    if (s.tStar < 40) v.push('Waiting for the vortex street to saturate (t* ≳ 40) before scoring.');
+    else v.push(`C_D,max ${inBand(s.cdMax, TUREK_2D2.cdMax)}`, `C_L,max ${inBand(s.clMax, TUREK_2D2.clMax)}`, `St ${Number.isFinite(s.st) ? inBand(s.st, TUREK_2D2.strouhal) : '—'}`);
+  } else if (s.re === 20) {
+    if (s.tStar < 15) v.push('Waiting for the steady state (t* ≳ 15) before scoring.');
+    else v.push(`C_D ${inBand(s.cd, TUREK_2D1.cd)}`);
+  } else v.push('No published reference for this case — qualitative only.');
+  $('verdict').innerHTML = v.join(' · ');
+  const band = s.re === 100 ? TUREK_2D2.cdMax : s.re === 20 ? TUREK_2D1.cd : null;
+  const tail = hist.filter((h) => h[0] > s.tStar - 30);
+  const thin = tail.filter((_, i) => i % Math.ceil(tail.length / 400) === 0);
+  if (!$('chartCd').matches(':hover')) lineChart($('chartCd'), { series: [{ name: 'C_D', color: '--series-1', points: thin.map((h) => [h[0], h[1]]) }], xLabel: 't*', yLabel: 'C_D', band, height: 240 });
+  if (!$('chartCl').matches(':hover')) lineChart($('chartCl'), { series: [{ name: 'C_L', color: '--series-3', points: thin.map((h) => [h[0], h[2]]) }], xLabel: 't*', yLabel: 'C_L', height: 240 });
+}
+
+function frame(now) {
+  if (running) {
+    const spf = +$('spf').value;
+    const T = sim.meta.d / sim.meta.uMean;
+    for (let i = 0; i < spf; i++) {
+      sim.step();
+      const [cd, cl] = coefficients();
+      if (!Number.isFinite(cd)) { running = false; $('verdict').innerHTML = '<span class="status bad">✕ Diverged — increase the diameter or lower Re.</span>'; break; }
+      if (sim.time % 5 === 0) hist.push([sim.time / T, cd, cl]);
+      if (prevCl < 0 && cl >= 0) crossings.push(sim.time);
+      prevCl = cl;
+    }
+    if (hist.length > 20000) hist.splice(0, 5000);
+  }
+  render(now);
+  requestAnimationFrame(frame);
+}
+
+// Paint obstacles with the pointer.
+function paint(ev) {
+  if (!(ev.buttons & 1)) return;
+  const r = $('field').getBoundingClientRect();
+  const x = Math.floor(((ev.clientX - r.left) / r.width) * sim.nx);
+  const y = sim.ny - 1 - Math.floor(((ev.clientY - r.top) / r.height) * sim.ny);
+  const rad = Math.max(1, Math.round(sim.meta.d / 5));
+  for (let dy = -rad; dy <= rad; dy++)
+    for (let dx = -rad; dx <= rad; dx++) {
+      const xx = x + dx, yy = y + dy;
+      if (xx > 1 && xx < sim.nx - 2 && yy >= 0 && yy < sim.ny && dx * dx + dy * dy <= rad * rad) sim.solid[sim.idx(xx, yy)] = 1;
+    }
+}
+$('field').addEventListener('pointerdown', paint);
+$('field').addEventListener('pointermove', paint);
+
+$('toggle').onclick = () => { running = !running; $('toggle').textContent = running ? 'Pause' : 'Resume'; };
+$('reset').onclick = reset;
+$('d').onchange = $('re').onchange = reset;
+$('export').onclick = () => {
+  const s = summary();
+  download(`cylinder-re${s.re}-d${sim.meta.d}.json`, JSON.stringify({
+    source: 'LBM D2Q9 BGK (browser demo)',
+    case: 'Schäfer–Turek channel cylinder',
+    re: s.re, diameterNodes: sim.meta.d, tau: sim.tau, steps: sim.time, tStar: +s.tStar.toFixed(2),
+    cdMean: +s.cdMean.toFixed(4), cdMax: +s.cdMax.toFixed(4), clMax: +s.clMax.toFixed(4),
+    strouhal: Number.isFinite(s.st) ? +s.st.toFixed(4) : null,
+  }, null, 2), 'application/json');
+};
+reset();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

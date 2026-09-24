@@ -75,6 +75,26 @@ Do not compare wall-clock time until the solutions have comparable errors. A def
 
 Start with an **OpenFOAM FVM baseline** for the submarine hull because it reduces geometry and engineering-model risk. In parallel, build an **OpenLB or Palabos LBM proof of concept** on the same simplified, low-Mach, single-phase case. Promote LBM only if it meets the same integrated-force and flow-field acceptance criteria at lower end-to-end cost on the intended hardware. Feed the validated result into Gazebo as a reduced-order hydrodynamic model rather than attempting to make Gazebo the CFD environment.
 
+## Browser demos and web libraries
+
+**Update 2026-09-24.** Parts of the plan now run as mid-fidelity browser demos on the project site, each built on a dependency-free ES module under `site/lib/` that also runs under Node for regression tests.
+
+| Element of this note | Browser module / demo | Verification in `npm test` |
+| --- | --- | --- |
+| LBM (D2Q9 BGK) | `lib/lbm.js` · cavity and cylinder demos | Force-driven Poiseuille profile within 0.5%; mass conserved to 1e-12; Re = 100 cavity centrelines within 0.02 of Ghia et al. (1982) |
+| FVM (staggered-grid projection) | `lib/fvm.js` · cavity demo | Re = 100 cavity centrelines within 0.015 of Ghia et al.; error falls from 16² to 32²; discrete divergence below 1e-6 |
+| Lattice-unit conversion (acceptance criterion) | `lib/units.js` · units demo | Re, ν, τ and Mach consistency; warnings on unstable τ |
+| Gazebo coupling (plan step 6) | `lib/hydro.js` · vehicle demo | Steady-speed force balance, Lamb added-mass sphere limit, SNAME-negative SDF derivatives |
+
+Measured in development (Node 26, single thread, one desktop CPU): the FVM cavity at 32² matched Ghia to a max deviation of 0.002 in u, and the LBM cavity at 64² to 0.006. The LBM cylinder (Schäfer–Turek 2D-2, Re = 100) gave St = 0.267 at D = 10 lattice nodes and 0.282 at D = 20, against the reference 0.295–0.305. That is the expected convergence towards the reference with refinement for a staircased BGK cylinder. These are 2D verification cases, not a vehicle result, and JavaScript timings are not a valid FVM-vs-LBM speed comparison.
+
+Existing web tools were surveyed before writing anything new:
+
+- **vtk.js** (Kitware) is a WebGL/WebGPU scientific-visualisation library, a suitable viewer for OpenFOAM/OpenLB field exports; the rom.js/cfd.xyz project uses it to publish OpenFOAM results. [vtk.js](https://github.com/Kitware/vtk-js) · [cfd.xyz / rom.js](https://arxiv.org/abs/2205.08387)
+- **gzweb** is Gazebo's three.js browser client; the gazebo-web/gzweb package targets current Gazebo as an npm library. [gazebo-web/gzweb](https://github.com/gazebo-web/gzweb) · [osrf/gzweb](https://github.com/osrf/gzweb)
+- **Browser GPU LBM** implementations exist for WebGL2 and WebGPU, and they are the upgrade path for larger lattices than the CPU demos handle. [WebGL2 LBM simulator](https://github.com/rafaelanderka/lattice-boltzmann-simulator) · [WebGPU LBM](https://huj31415.github.io/lattice-boltzmann-webgpu/)
+- The vehicle demo exports to the **gz-sim Hydrodynamics system** (`gz-sim-hydrodynamics-system`), whose parameters use the SNAME derivative convention. [Hydrodynamics system](https://gazebosim.org/api/sim/8/classgz_1_1sim_1_1systems_1_1Hydrodynamics.html)
+
 ## Limits of this note
 
-This is a research synthesis and experiment design, not a completed CFD study. No tool was executed here, no geometry was supplied, and no performance or accuracy result is asserted. The next implementation step is to define the hull/flow conditions and run the benchmark plan.
+This is a research synthesis and experiment design, not a completed vehicle CFD study. The browser demos verify the two methods on canonical 2D laminar cases only. No OpenFOAM, OpenLB or Palabos run has been made, no hull geometry was supplied, and the vehicle model's coefficients are illustrative. The next implementation step is to define the hull and flow conditions and run the benchmark plan with the production tools.

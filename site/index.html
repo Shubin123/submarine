@@ -1,37 +1,95 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Finite Volume vs. Lattice Boltzmann</title>
-    <style>
-      :root { color-scheme: light dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
-      body { margin: 0; background: #f6f8fb; color: #172033; }
-      main { max-width: 850px; margin: 0 auto; padding: 4rem 1.5rem 5rem; }
-      h1 { font-size: clamp(2rem, 6vw, 4rem); letter-spacing: -.05em; margin: 0 0 1rem; }
-      h2 { margin-top: 2.5rem; }
-      .lede { font-size: 1.25rem; line-height: 1.55; color: #42516c; max-width: 50rem; }
-      .card { margin: 2rem 0; padding: 1.5rem; border-radius: 14px; background: white; box-shadow: 0 4px 24px #17203312; }
-      a { color: #0759bf; } li { line-height: 1.6; margin: .45rem 0; }
-      @media (prefers-color-scheme: dark) { body { background: #111827; color: #e5e7eb; } .lede { color: #c0cadb; } .card { background: #1f2937; } a { color: #82b7ff; } }
-    </style>
-  </head>
-  <body>
-    <main>
-      <p>CFD research note · 2026-09-23</p>
-      <h1>Finite Volume vs.<br>Lattice Boltzmann</h1>
-      <p class="lede">A practical choice framework for vehicle-flow simulation and a fair plan for connecting validated CFD to Gazebo.</p>
-      <section class="card">
-        <h2>Bottom line</h2>
-        <p>Begin with a finite-volume baseline for the submarine hull. Evaluate LBM on the same low-Mach, single-phase conditions only after matching error and refinement criteria. Use Gazebo for robot dynamics and control integration—not as the CFD solver.</p>
-      </section>
-      <h2>What this contains</h2>
-      <ul>
-        <li>A method and risk comparison</li>
-        <li>OpenFOAM, OpenLB, Palabos, AeroToolbox, and Gazebo roles</li>
-        <li>A matched-accuracy benchmark plan and acceptance criteria</li>
-      </ul>
-      <p><a href="../research.md">Read the full Markdown research note</a> · <a href="../README.md">Repository README</a></p>
-    </main>
-  </body>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Submarine CFD Demos</title>
+  <meta name="description" content="Finite volume vs lattice Boltzmann for vehicle flow, with live browser demos and a CFD-to-Gazebo interface.">
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main>
+  <p class="eyebrow">CFD research note + mid-fidelity web demos · updated 2026-09-24</p>
+  <h1>Finite volume vs lattice Boltzmann,<br>running in your browser</h1>
+  <p class="lede">A practical choice framework for submarine and vehicle-flow simulation, plus working browser demos of each part: both solvers on a verification benchmark, a lattice-unit converter, and a reduced-order vehicle model that exports to Gazebo.</p>
+
+  <section class="card">
+    <h2 style="margin-top:0">Bottom line</h2>
+    <p>Start with a finite-volume baseline (OpenFOAM) for the hull. Evaluate LBM (OpenLB / Palabos) on the same low-Mach, single-phase case only after both meet the same error and refinement criteria. Use Gazebo for robot dynamics and control, fed by a reduced-order hydrodynamic model — not as the CFD solver.</p>
+  </section>
+
+  <h2>Live demos</h2>
+  <div class="grid">
+    <a class="card" href="demos/cavity.html">
+      <h3>FVM vs LBM · lid-driven cavity</h3>
+      <p>Both solvers side by side at Re = 100, scored live against Ghia et al. (1982) centreline data.</p>
+      <span class="tag">verification</span><span class="tag">matched error</span>
+    </a>
+    <a class="card" href="demos/cylinder.html">
+      <h3>LBM · cylinder wake</h3>
+      <p>Schäfer–Turek channel: vortex street, drag/lift from momentum exchange, Strouhal number vs reference. Draw your own obstacles.</p>
+      <span class="tag">forces</span><span class="tag">refinement</span>
+    </a>
+    <a class="card" href="demos/units.html">
+      <h3>Physical → lattice units</h3>
+      <p>Reynolds number, τ, lattice Mach and time step, with stability and compressibility warnings.</p>
+      <span class="tag">LBM setup</span>
+    </a>
+    <a class="card" href="demos/vehicle.html">
+      <h3>Vehicle model + Gazebo export</h3>
+      <p>Pilot a reduced-order AUV driven by a drag table you can replace with CFD data, then export a gz-sim Hydrodynamics block.</p>
+      <span class="tag">coupling</span><span class="tag">SDF</span>
+    </a>
+  </div>
+
+  <h2>How the demos map to the benchmark plan</h2>
+  <div class="card table-wrap">
+    <table>
+      <thead><tr><th>Plan step</th><th>Demo</th><th>What it shows</th><th>What it does not</th></tr></thead>
+      <tbody>
+        <tr><td>1 · Canonical verification</td><td><a href="demos/cavity.html">Cavity</a>, <a href="demos/cylinder.html">Cylinder</a></td><td>Both methods reproduce published data; error falls with refinement.</td><td>No turbulence model, 2D only.</td></tr>
+        <tr><td>4 · Equalise accuracy</td><td><a href="demos/cavity.html">Cavity</a></td><td>Deviation from reference is shown next to compute time.</td><td>A browser JS timing is not an HPC benchmark.</td></tr>
+        <tr><td>5 · Record cost honestly</td><td><a href="demos/units.html">Units</a></td><td>Lattice size and time step implied by a physical case.</td><td>Wall-model or LES cost.</td></tr>
+        <tr><td>6 · Couple to Gazebo</td><td><a href="demos/vehicle.html">Vehicle</a></td><td>Drag table → manoeuvring model → SDF plugin block.</td><td>Coefficients are illustrative, not identified from a vehicle.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>The web libraries</h2>
+  <p>Each demo is a thin page over a dependency-free ES module in <code>lib/</code>. They import directly from this site or from the repository, and the same files run under Node for regression tests (<code>npm test</code>).</p>
+  <div class="card table-wrap">
+    <table>
+      <thead><tr><th>Module</th><th>Provides</th><th>Verified by</th></tr></thead>
+      <tbody>
+        <tr><td><a href="lib/lbm.js"><code>lib/lbm.js</code></a></td><td>D2Q9 BGK solver, Guo forcing, moving-wall bounce-back, velocity inlet / pressure outlet, momentum-exchange forces; cavity and cylinder presets</td><td>Poiseuille profile, mass conservation, Ghia cavity</td></tr>
+        <tr><td><a href="lib/fvm.js"><code>lib/fvm.js</code></a></td><td>Staggered-grid finite-volume Navier–Stokes, projection with conjugate-gradient pressure solve</td><td>Ghia cavity, grid-refinement trend, discrete divergence</td></tr>
+        <tr><td><a href="lib/units.js"><code>lib/units.js</code></a></td><td>Physical ↔ lattice conversion, fluid property presets, stability warnings</td><td>Self-consistency checks</td></tr>
+        <tr><td><a href="lib/hydro.js"><code>lib/hydro.js</code></a></td><td>ITTC-1957 friction, Hoerner form factor, Lamb added mass, 4-DOF manoeuvring model, drag tables, Gazebo SDF export</td><td>Sphere limit, steady-speed balance, sign conventions</td></tr>
+        <tr><td><a href="lib/reference.js"><code>lib/reference.js</code></a></td><td>Ghia (1982) and Schäfer–Turek (1996) reference data, interpolation</td><td>—</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <pre><code>&lt;script type="module"&gt;
+  import { cylinderChannel } from 'https://shubin123.github.io/submarine/lib/lbm.js';
+  const sim = cylinderChannel({ d: 10, re: 100 });
+  sim.step(1000);
+  console.log('Fx, Fy (lattice units):', sim.bodyForce);
+&lt;/script&gt;</code></pre>
+
+  <h2>Existing web tools worth reusing</h2>
+  <p>The survey behind the demos found mature browser-side projects for viewing and integration; building our own was only needed for the small verified solvers.</p>
+  <div class="grid">
+    <div class="card"><h3>vtk.js (Kitware)</h3><p>Scientific visualisation on the web (WebGL, WebGPU coming). A natural viewer for exported OpenFOAM/OpenLB fields; rom.js / cfd.xyz uses it to publish OpenFOAM results.</p><p><a href="https://github.com/Kitware/vtk-js">GitHub</a> · <a href="https://arxiv.org/abs/2205.08387">cfd.xyz paper</a></p></div>
+    <div class="card"><h3>gzweb</h3><p>Browser client for Gazebo built on three.js; the newer gazebo-web/gzweb is published as an npm library for current Gazebo.</p><p><a href="https://github.com/gazebo-web/gzweb">gazebo-web/gzweb</a> · <a href="https://github.com/osrf/gzweb">osrf/gzweb (Classic)</a></p></div>
+    <div class="card"><h3>GPU LBM in the browser</h3><p>WebGL2 and WebGPU D2Q9 implementations show the same algorithm scaled onto the GPU — the upgrade path if these demos need larger lattices.</p><p><a href="https://github.com/rafaelanderka/lattice-boltzmann-simulator">WebGL2 simulator</a> · <a href="https://huj31415.github.io/lattice-boltzmann-webgpu/">WebGPU demo</a></p></div>
+  </div>
+
+  <h2>Read more</h2>
+  <p><a href="research.html">Full research note</a> · <a href="https://github.com/Shubin123/submarine">Source repository</a></p>
+</main>
+<script type="module">
+import { chrome } from './assets/ui.js';
+chrome('.');
+</script>
+</body>
 </html>
