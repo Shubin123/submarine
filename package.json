@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Browser-hosted FVM and LBM demos plus reduced-order vehicle hydrodynamics",
   "scripts": {
-    "test": "node --test tests/",
+    "test": "node --test tests/*.test.js",
     "serve": "cp research.md site/research.md && python3 -m http.server 8000 -d site"
   },
   "license": "MIT"
