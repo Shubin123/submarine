@@ -8,37 +8,50 @@
   <link rel="stylesheet" href="assets/style.css">
 </head>
 <body>
+<section class="hero">
+  <svg class="flow" id="flow"></svg>
+  <div class="inner">
+    <p class="eyebrow">CFD research note · browser demos · updated 2026-09-24</p>
+    <h1>Finite volume vs lattice Boltzmann, running in your browser</h1>
+    <p class="lede">A practical choice framework for submarine and vehicle-flow simulation, with working browser demos of each part: both solvers on a verification benchmark, a lattice-unit converter, and a reduced-order vehicle model that exports to Gazebo.</p>
+    <div class="cta"><a class="primary" href="demos/cavity.html">Run the benchmark</a><a class="ghost" href="research.html">Read the note</a></div>
+  </div>
+</section>
 <main>
-  <p class="eyebrow">CFD research note + mid-fidelity web demos · updated 2026-09-24</p>
-  <h1>Finite volume vs lattice Boltzmann,<br>running in your browser</h1>
-  <p class="lede">A practical choice framework for submarine and vehicle-flow simulation, plus working browser demos of each part: both solvers on a verification benchmark, a lattice-unit converter, and a reduced-order vehicle model that exports to Gazebo.</p>
-
-  <section class="card">
-    <h2 style="margin-top:0">Bottom line</h2>
-    <p>Start with a finite-volume baseline (OpenFOAM) for the hull. Evaluate LBM (OpenLB / Palabos) on the same low-Mach, single-phase case only after both meet the same error and refinement criteria. Use Gazebo for robot dynamics and control, fed by a reduced-order hydrodynamic model — not as the CFD solver.</p>
+  <section class="card callout">
+    <p class="eyebrow">Bottom line</p>
+    <p style="font-size:1.05rem;margin-top:.6rem">Start with a finite-volume baseline (OpenFOAM) for the hull. Evaluate LBM (OpenLB / Palabos) on the same low-Mach, single-phase case only after both meet the same error and refinement criteria. Use Gazebo for robot dynamics and control, fed by a reduced-order hydrodynamic model — not as the CFD solver.</p>
   </section>
 
   <h2>Live demos</h2>
-  <div class="grid">
+  <div class="grid four">
     <a class="card" href="demos/cavity.html">
+      <span class="num">01</span>
       <h3>FVM vs LBM · lid-driven cavity</h3>
       <p>Both solvers side by side at Re = 100, scored live against Ghia et al. (1982) centreline data.</p>
-      <span class="tag">verification</span><span class="tag">matched error</span>
+      <div class="tags"><span class="tag">verification</span><span class="tag">matched error</span></div>
+      <span class="go">Open demo →</span>
     </a>
     <a class="card" href="demos/cylinder.html">
+      <span class="num">02</span>
       <h3>LBM · cylinder wake</h3>
       <p>Schäfer–Turek channel: vortex street, drag/lift from momentum exchange, Strouhal number vs reference. Draw your own obstacles.</p>
-      <span class="tag">forces</span><span class="tag">refinement</span>
+      <div class="tags"><span class="tag">forces</span><span class="tag">refinement</span></div>
+      <span class="go">Open demo →</span>
     </a>
     <a class="card" href="demos/units.html">
+      <span class="num">03</span>
       <h3>Physical → lattice units</h3>
       <p>Reynolds number, τ, lattice Mach and time step, with stability and compressibility warnings.</p>
-      <span class="tag">LBM setup</span>
+      <div class="tags"><span class="tag">LBM setup</span></div>
+      <span class="go">Open demo →</span>
     </a>
     <a class="card" href="demos/vehicle.html">
+      <span class="num">04</span>
       <h3>Vehicle model + Gazebo export</h3>
       <p>Pilot a reduced-order AUV driven by a drag table you can replace with CFD data, then export a gz-sim Hydrodynamics block.</p>
-      <span class="tag">coupling</span><span class="tag">SDF</span>
+      <div class="tags"><span class="tag">coupling</span><span class="tag">SDF</span></div>
+      <span class="go">Open demo →</span>
     </a>
   </div>
 
@@ -88,8 +101,9 @@
   <p><a href="research.html">Full research note</a> · <a href="https://github.com/Shubin123/submarine">Source repository</a></p>
 </main>
 <script type="module">
-import { chrome } from './assets/ui.js';
+import { chrome, heroFlow } from './assets/ui.js';
 chrome('.');
+heroFlow(document.getElementById('flow'));
 </script>
 </body>
 </html>
