@@ -17,8 +17,10 @@ export function chrome(root = '.') {
   PAGES.forEach(([href, label], i) => {
     const a = document.createElement('a');
     a.href = `${root}/${href}`;
-    a.textContent = i === 0 ? 'Submarine CFD' : label;
-    if (i === 0) a.className = 'brand';
+    if (i === 0) {
+      a.className = 'brand';
+      a.innerHTML = `${GLYPH}<span>Submarine CFD</span>`;
+    } else a.textContent = label;
     if (here.endsWith(href) || (i === 0 && /\/(index\.html)?$/.test(location.pathname) && !here.includes('demos/'))) a.setAttribute('aria-current', 'page');
     nav.append(a);
   });
@@ -40,6 +42,47 @@ export function chrome(root = '.') {
   nav.append(btn);
   header.append(nav);
   document.body.prepend(header);
+  const footer = document.createElement('footer');
+  footer.className = 'site';
+  footer.innerHTML = `<div><span>Finite volume vs lattice Boltzmann · research note and browser demos</span>
+    <span><a href="${root}/research.html">Research note</a> · <a href="https://github.com/Shubin123/submarine">Source</a></span></div>`;
+  document.body.append(footer);
+}
+
+const GLYPH = '<svg viewBox="0 0 26 14" aria-hidden="true"><path d="M1 7h5M1 3.5c3 0 4 1.2 6 1.6M1 10.5c3 0 4-1.2 6-1.6" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round" opacity=".55"/><ellipse cx="16" cy="7" rx="9" ry="4.2" fill="currentColor"/></svg>';
+
+// Potential-flow streamlines past a cylinder, stretched into a hull-like body, drawn into an SVG.
+// ψ = y·(1 − R²/r²) with R = 1; each streamline is traced by bisection on y at fixed x.
+export function heroFlow(svg, { width = 1200, height = 520, cx = 860, cy = 260, scale = 58, stretch = 1.9 } = {}) {
+  const ns = 'http://www.w3.org/2000/svg';
+  svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+  svg.setAttribute('preserveAspectRatio', 'xMidYMid slice');
+  svg.setAttribute('aria-hidden', 'true');
+  const psi = (x, y) => y * (1 - 1 / (x * x + y * y));
+  const solveY = (x, target) => {
+    let lo = Math.sqrt(Math.max(0, 1 - x * x)) + 1e-9, hi = target + 6;
+    for (let i = 0; i < 48; i++) { const mid = (lo + hi) / 2; if (psi(x, mid) < target) lo = mid; else hi = mid; }
+    return (lo + hi) / 2;
+  };
+  const xMin = -cx / (scale * stretch) - 0.5, xMax = (width - cx) / (scale * stretch) + 0.5;
+  const levels = [0.04, 0.14, 0.3, 0.5, 0.75, 1.05, 1.4, 1.8, 2.25, 2.75, 3.3, 3.9, 4.6];
+  for (const [li, level] of levels.entries())
+    for (const sign of [1, -1]) {
+      let d = '';
+      for (let k = 0; k <= 160; k++) {
+        const x = xMin + ((xMax - xMin) * k) / 160;
+        const y = solveY(x, level);
+        d += `${k ? 'L' : 'M'}${(cx + x * scale * stretch).toFixed(1)},${(cy - sign * y * scale).toFixed(1)}`;
+      }
+      const path = document.createElementNS(ns, 'path');
+      path.setAttribute('d', d);
+      if (li % 4 === 1) path.setAttribute('class', 'hi');
+      path.style.animationDelay = `${-(li * 0.37 + (sign > 0 ? 0 : 0.2))}s`;
+      svg.append(path);
+    }
+  const body = document.createElementNS(ns, 'ellipse');
+  Object.entries({ cx, cy, rx: scale * stretch, ry: scale }).forEach(([k, v]) => body.setAttribute(k, v));
+  svg.append(body);
 }
 
 export const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
