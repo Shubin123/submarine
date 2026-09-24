@@ -1,6 +1,12 @@
-# Finite Volume vs. Lattice Boltzmann
+# Submarine CFD: Finite Volume vs. Lattice Boltzmann
 
-A source-linked research note, a reproducible benchmark plan, and live browser demos for choosing between finite-volume (FVM) and lattice-Boltzmann (LBM) CFD for an underwater vehicle or other flow-coupled robotics project.
+This project explores practical CFD options for underwater vehicles and other flow-coupled robots. It combines a source-linked research note, a reproducible benchmark plan, lightweight browser simulations, and a reduced-order vehicle model that connects hydrodynamic data to Gazebo.
+
+## Project summary
+
+The project compares finite-volume (FVM) and lattice-Boltzmann (LBM) methods using canonical 2D flow cases. Its dependency-free JavaScript solvers run in a browser and under Node, where regression tests check their results against published reference data. Companion tools convert physical values to lattice units and demonstrate how vehicle force and manoeuvring models can be exported for Gazebo simulation.
+
+The intended workflow is to verify the numerical methods on standard cases, select a production CFD tool for the vehicle geometry, and pass validated hydrodynamic coefficients into a robot simulator. The included browser demos are verification and exploration tools; they are not a completed 3D submarine CFD study.
 
 **Live site:** https://shubin123.github.io/submarine/ · Research note: [research.md](research.md)
 
