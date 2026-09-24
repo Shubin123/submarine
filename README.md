@@ -10,6 +10,15 @@ The intended workflow is to verify the numerical methods on standard cases, sele
 
 **Live site:** https://shubin123.github.io/submarine/ · Research note: [research.md](research.md)
 
+## ArmLab sibling repository
+
+This is the submarine-deployment companion to [ArmLab — 6-DOF Gym](https://github.com/Shubin123/6dof-gym-web) and its [live browser prototype](https://shubin123.github.io/6dof-gym-web/).
+
+- **ArmLab:** general arm task contracts, workspace validation, safety-capped 6-DOF motion, and browser episode capture.
+- **This repository:** the subsea docking task—bay clearance, latching, drone hand-off, recovery corridor, plus the CFD and vehicle-model implications of those poses.
+
+Use the gym to validate an arm task and its safety envelope; use this project to place the validated task inside the submarine’s deployment environment. Both browser prototypes are simulation tools, never direct hardware controllers.
+
 ## Demos
 
 | Page | What it runs |
@@ -18,6 +27,7 @@ The intended workflow is to verify the numerical methods on standard cases, sele
 | [Cylinder wake](https://shubin123.github.io/submarine/demos/cylinder.html) | LBM Schäfer–Turek channel: vortex street, C<sub>D</sub>/C<sub>L</sub>, Strouhal number |
 | [Lattice units](https://shubin123.github.io/submarine/demos/units.html) | Physical → lattice conversion with stability warnings |
 | [Vehicle + Gazebo](https://shubin123.github.io/submarine/demos/vehicle.html) | Reduced-order AUV model driven by a replaceable drag table; gz-sim Hydrodynamics SDF export |
+| [Drone-bay deployment](https://shubin123.github.io/submarine/demos/bay.html) | Interactive 6-DOF arm docking and autonomous-drone release concept, linked to ArmLab |
 
 ## Libraries
 

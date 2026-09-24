@@ -1,5 +1,19 @@
 # Finite Volume vs. Lattice Boltzmann for vehicle-flow simulation
 
+## Drone-bay armature integration
+
+The vehicle concept now includes a six-degree-of-freedom armature that docks and deploys an autonomous drone from a protected submarine bay. Treat the arm, gripper, bay door, and drone as distinct simulation interfaces:
+
+1. **Kinematics and mission logic:** simulate the arm’s joint limits, inverse kinematics, collision volume, latching, and a guarded state machine (`stowed → docked → health check → release → recovery`) in Gazebo or another robot simulator.
+2. **Hydrodynamics:** model the hull with the bay shut first, then add the door, stowed arm, and representative deployed poses. Calculate force and moment deltas for the submarine and the drone release envelope; reduce accepted results to controller-facing coefficients or lookup tables.
+3. **Autonomy hand-off:** release only after communications, power state, localization, and pose checks pass. The drone’s controller owns its sortie after release; the armature owns neither station keeping nor the drone’s navigation.
+
+### ArmLab sibling boundary
+
+This repository is a companion to [ArmLab — 6-DOF Gym](https://github.com/Shubin123/6dof-gym-web), whose [browser prototype](https://shubin123.github.io/6dof-gym-web/) provides a spatial yaw/pitch/pitch/yaw/pitch/roll arm chain, workspace and reach validation, collision-aware bounded motion, and recorded browser episodes. Use ArmLab to define and validate the generic manipulator task; use this repository to define the submarine-specific bay, hydrodynamic, launch, and recovery conditions.
+
+Neither browser implementation is a hardware controller. Production use requires robot-specific collision meshes, joint/load/velocity limits, watchdogs, dead-man control, and an independent emergency stop.
+
 **Research date:** 2026-09-23
 
 **Question:** Which numerical route—finite volume (FVM) or lattice Boltzmann (LBM)—is more appropriate for a flow study that may later connect to a Gazebo submarine / robotic-vehicle simulation?
