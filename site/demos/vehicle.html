@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vehicle Hydrodynamics</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <style>
+    .views { display: grid; gap: 12px; grid-template-columns: 2fr 1fr; }
+    @media (max-width: 760px) { .views { grid-template-columns: 1fr; } }
+    .views canvas { width: 100%; background: var(--surface-2); border-radius: 8px; display: block; touch-action: none; }
+  </style>
+</head>
+<body>
+<main>
+  <p class="eyebrow">Benchmark step 6 · couple to the robot simulator</p>
+  <h1>Reduced-order vehicle + Gazebo export</h1>
+  <p class="lede">CFD is reduced to an interface — a drag table, added mass and damping — and that interface drives a manoeuvring model. The same coefficients export as a <code>gz-sim</code> Hydrodynamics system block, so Gazebo consumes the validated CFD result instead of trying to be the CFD solver.</p>
+
+  <div class="controls">
+    <label>Hull <select id="hull"></select></label>
+    <label>Thrust [N] <input id="thrust" type="range" min="-10" max="60" step="1" value="15"><span id="thrustOut"></span></label>
+    <label>Helm [°] (+ = starboard) <input id="rudder" type="range" min="-25" max="25" step="1" value="0"><span id="rudderOut"></span></label>
+    <label>Net weight [N] (+ heavy) <input id="ballast" type="range" min="-20" max="20" step="0.5" value="0"><span id="ballastOut"></span></label>
+    <button id="toggle" class="primary">Pause</button>
+    <button id="reset">Reset</button>
+  </div>
+  <p class="note">Keys: <kbd>W</kbd>/<kbd>S</kbd> thrust · <kbd>A</kbd>/<kbd>D</kbd> helm · <kbd>Q</kbd>/<kbd>E</kbd> ballast · <kbd>Space</kbd> centre helm.</p>
+
+  <div class="views">
+    <section class="card"><h3>Plan view (north up, 5 m grid)</h3><canvas id="top" width="760" height="420"></canvas></section>
+    <section class="card"><h3>Depth</h3><canvas id="side" width="360" height="420"></canvas></section>
+  </div>
+  <div class="stats" id="stats"></div>
+
+  <h2>Speed response</h2>
+  <section class="card"><div id="chart"></div></section>
+
+  <h2>CFD → model interface</h2>
+  <div class="grid two">
+    <section class="card">
+      <h3>Drag table (frontal-area C<sub>D</sub> vs length Reynolds number)</h3>
+      <p class="note">Paste coefficients from an accepted OpenFOAM/OpenLB run here. The default is the ITTC-1957 friction line × Hoerner form factor.</p>
+      <textarea id="table" rows="9"></textarea>
+      <div class="controls"><button id="apply">Apply table</button><button id="empirical">Restore empirical</button><span id="tableMsg" class="note"></span></div>
+    </section>
+    <section class="card">
+      <h3>Gazebo Hydrodynamics system block</h3>
+      <p class="note">SNAME-convention derivatives for <code>gz-sim-hydrodynamics-system</code>; paste into the vehicle's SDF model.</p>
+      <div class="controls"><label>Design speed for X<sub>u|u|</sub> [m/s] <input id="design" type="number" value="1.5" step="0.1" min="0.1"></label><button id="dl">Download .sdf snippet</button></div>
+      <pre id="sdf"></pre>
+    </section>
+  </div>
+  <p class="note">Model: decoupled surge/sway/yaw plus heave, Lamb added mass for an equivalent prolate spheroid, quadratic cross-flow drag, and illustrative rudder and linear damping terms. It demonstrates the interface; the coefficients are not identified from a real vehicle.</p>
+</main>
+<script type="module">
+import { chrome, lineChart, cssVar, download } from '../assets/ui.js';
+import { HULL_PRESETS, buildVehicle, empiricalDragTable, makeDragTable, rk4, steadySpeed, surgeQuadratic, toGazeboSdf } from '../lib/hydro.js';
+chrome('..');
+const $ = (id) => document.getElementById(id);
+for (const [k, h] of Object.entries(HULL_PRESETS)) $('hull').add(new Option(h.label, k));
+
+let veh, state, trail, speedHist, running = true, table, simTime;
+const DT = 0.02;
+
+function rebuild() {
+  const h = HULL_PRESETS[$('hull').value];
+  veh = buildVehicle({ ...h, dragTable: table });
+  $('sdf').textContent = toGazeboSdf(veh, { designSpeed: +$('design').value || 1.5 });
+}
+function reset() {
+  state = [0, 0, 5, 0, 0, 0, 0, 0];
+  trail = []; speedHist = []; simTime = 0;
+}
+function showTable(t) {
+  $('table').value = JSON.stringify({ source: t.source, re: t.re, cd: t.cd.map((c) => +c.toFixed(4)) }, null, 2);
+}
+function useEmpirical() {
+  const h = HULL_PRESETS[$('hull').value];
+  table = empiricalDragTable(h);
+  showTable(table);
+  $('tableMsg').textContent = '';
+  rebuild();
+}
+
+// Positive helm turns to starboard (model rudder sign is opposite).
+const controls = () => ({ thrust: +$('thrust').value, rudder: (-$('rudder').value * Math.PI) / 180, ballast: +$('ballast').value });
+
+function drawTop() {
+  const c = $('top'), ctx = c.getContext('2d');
+  const W = c.width, H = c.height, scale = 22; // px per metre
+  const [x, y] = state; // x north, y east
+  const toPx = (px, py) => [W / 2 + (py - y) * scale, H / 2 - (px - x) * scale];
+  ctx.clearRect(0, 0, W, H);
+  ctx.strokeStyle = cssVar('--grid'); ctx.lineWidth = 1;
+  const g = 5;
+  for (let e = Math.floor((y - W / 2 / scale) / g) * g; e < y + W / 2 / scale; e += g) { const [px] = toPx(0, e); ctx.beginPath(); ctx.moveTo(px, 0); ctx.lineTo(px, H); ctx.stroke(); }
+  for (let n = Math.floor((x - H / 2 / scale) / g) * g; n < x + H / 2 / scale; n += g) { const [, py] = toPx(n, 0); ctx.beginPath(); ctx.moveTo(0, py); ctx.lineTo(W, py); ctx.stroke(); }
+  ctx.strokeStyle = cssVar('--series-1'); ctx.lineWidth = 2; ctx.beginPath();
+  trail.forEach((p, i) => { const [px, py] = toPx(p[0], p[1]); i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); });
+  ctx.stroke();
+  // Hull
+  const psi = state[3];
+  ctx.save(); ctx.translate(W / 2, H / 2); ctx.rotate(psi); // heading clockwise from north
+  const L = veh.length * scale, D = Math.max(veh.diameter * scale, 3);
+  ctx.fillStyle = cssVar('--text'); ctx.beginPath(); ctx.ellipse(0, 0, D / 2, L / 2, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = cssVar('--series-2'); ctx.beginPath(); ctx.arc(0, -L / 2, 3, 0, Math.PI * 2); ctx.fill(); // bow marker
+  ctx.restore();
+  ctx.fillStyle = cssVar('--muted'); ctx.font = '12px system-ui';
+  ctx.fillText(`N ${x.toFixed(1)} m  E ${y.toFixed(1)} m`, 10, H - 10);
+}
+
+function drawSide() {
+  const c = $('side'), ctx = c.getContext('2d');
+  const W = c.width, H = c.height, maxDepth = Math.max(20, Math.ceil(state[2] / 10) * 10 + 5);
+  const dy = (z) => 20 + (z / maxDepth) * (H - 40);
+  ctx.clearRect(0, 0, W, H);
+  ctx.strokeStyle = cssVar('--grid'); ctx.fillStyle = cssVar('--muted'); ctx.font = '11px system-ui';
+  for (let z = 0; z <= maxDepth; z += 5) { ctx.beginPath(); ctx.moveTo(40, dy(z)); ctx.lineTo(W, dy(z)); ctx.stroke(); ctx.fillText(`${z} m`, 4, dy(z) + 4); }
+  ctx.strokeStyle = cssVar('--series-3'); ctx.lineWidth = 2; ctx.beginPath();
+  const recent = trail.slice(-600);
+  recent.forEach((p, i) => { const px = 40 + (i / 600) * (W - 50); i ? ctx.lineTo(px, dy(p[2])) : ctx.moveTo(px, dy(p[2])); });
+  ctx.stroke();
+  ctx.fillStyle = cssVar('--text');
+  ctx.beginPath(); ctx.arc(40 + (recent.length / 600) * (W - 50), dy(state[2]), 5, 0, Math.PI * 2); ctx.fill();
+}
+
+const stat = (k, v) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`;
+let lastUi = 0;
+function frame(now) {
+  if (running) {
+    for (let i = 0; i < 2; i++) { state = rk4(veh, state, controls(), DT); simTime += DT; }
+    if (Math.round(simTime / DT) % 5 === 0) { trail.push([state[0], state[1], state[2]]); if (trail.length > 3000) trail.shift(); }
+    if (Math.round(simTime / DT) % 10 === 0) { speedHist.push([simTime, state[4]]); if (speedHist.length > 600) speedHist.shift(); }
+  }
+  drawTop(); drawSide();
+  if (now - lastUi > 250) {
+    lastUi = now;
+    const [, , z, psi, u, v, w, r] = state;
+    const re = Math.abs(u) * veh.length / veh.nu;
+    const ctl = controls();
+    $('thrustOut').textContent = ` ${ctl.thrust} N`; $('rudderOut').textContent = ` ${$('rudder').value}°`; $('ballastOut').textContent = ` ${ctl.ballast} N`;
+    const heading = ((psi * 180 / Math.PI) % 360 + 360) % 360;
+    $('stats').innerHTML = stat('Surge u', u.toFixed(2) + ' m/s') + stat('Sway v', v.toFixed(3) + ' m/s') + stat('Heading', heading.toFixed(0) + '°')
+      + stat('Yaw rate', (r * 180 / Math.PI).toFixed(1) + ' °/s') + stat('Depth', z.toFixed(2) + ' m') + stat('Heave w', w.toFixed(3) + ' m/s')
+      + stat('Re_L', re.toExponential(2)) + stat('C_D (table)', veh.table.lookup(Math.max(re, 1)).toFixed(4))
+      + stat('Drag', (surgeQuadratic(veh, u) * u * Math.abs(u)).toFixed(2) + ' N') + stat('Predicted steady u', steadySpeed(veh, Math.max(ctl.thrust, 0)).toFixed(2) + ' m/s')
+      + stat('Mass + added (surge)', (veh.mass + veh.addedMass.x).toFixed(1) + ' kg');
+    if (speedHist.length > 1 && !$('chart').matches(':hover'))
+      lineChart($('chart'), { series: [{ name: 'Surge speed', color: '--series-1', points: speedHist }], xLabel: 'time [s]', yLabel: 'u [m/s]', height: 220, width: 900, fmt: (x) => x.toFixed(3) + ' m/s' });
+  }
+  requestAnimationFrame(frame);
+}
+
+const nudge = (id, d) => { const e = $(id); e.value = Math.min(+e.max, Math.max(+e.min, +e.value + d)); };
+addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT' && e.target.type === 'number') return;
+  const k = e.key.toLowerCase();
+  if (k === 'w') nudge('thrust', 2); else if (k === 's') nudge('thrust', -2);
+  else if (k === 'a') nudge('rudder', -2); else if (k === 'd') nudge('rudder', 2);
+  else if (k === 'q') nudge('ballast', -0.5); else if (k === 'e') nudge('ballast', 0.5);
+  else if (k === ' ') { $('rudder').value = 0; e.preventDefault(); }
+});
+
+$('apply').onclick = () => {
+  try {
+    const j = JSON.parse($('table').value);
+    table = makeDragTable({ re: j.re, cd: j.cd, source: j.source ?? 'user table' });
+    rebuild();
+    $('tableMsg').innerHTML = '<span class="status good">✓ Applied</span>';
+  } catch (err) { $('tableMsg').innerHTML = `<span class="status bad">✕ ${err.message}</span>`; }
+};
+$('empirical').onclick = useEmpirical;
+$('hull').onchange = () => { useEmpirical(); reset(); };
+$('design').oninput = rebuild;
+$('dl').onclick = () => download('hydrodynamics.sdf', $('sdf').textContent, 'application/xml');
+$('toggle').onclick = () => { running = !running; $('toggle').textContent = running ? 'Pause' : 'Resume'; };
+$('reset').onclick = reset;
+useEmpirical();
+reset();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

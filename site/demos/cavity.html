@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FVM vs LBM Cavity</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<main>
+  <p class="eyebrow">Benchmark step 1 · canonical verification</p>
+  <h1>Lid-driven cavity: finite volume vs lattice Boltzmann</h1>
+  <p class="lede">Both solvers run live in your browser on the same Re = 100 cavity and are scored against the Ghia, Ghia &amp; Shin (1982) centreline data. This is the “equalise accuracy before comparing speed” rule from the research note, made runnable.</p>
+
+  <div class="controls">
+    <label>FVM grid (cells)
+      <select id="fvmN"><option>16</option><option selected>32</option><option>48</option><option>64</option></select></label>
+    <label>LBM lattice (nodes)
+      <select id="lbmN"><option>32</option><option selected>48</option><option>64</option><option>96</option></select></label>
+    <label>Reynolds number
+      <select id="re"><option selected>100</option><option>400</option><option>1000</option></select></label>
+    <button id="toggle" class="primary">Pause</button>
+    <button id="reset">Restart</button>
+  </div>
+  <p class="note" id="reNote" hidden>Ghia reference markers are only shown at Re = 100; higher Re runs are qualitative (the coarse explicit FVM step also gets small).</p>
+
+  <div class="grid two">
+    <section class="card">
+      <h3>Finite volume <span class="tag">MAC grid</span><span class="tag">projection + CG</span></h3>
+      <canvas id="fvmCanvas" class="field" width="32" height="32" aria-label="FVM speed field"></canvas>
+      <div class="stats" id="fvmStats"></div>
+    </section>
+    <section class="card">
+      <h3>Lattice Boltzmann <span class="tag">D2Q9 BGK</span><span class="tag">moving-wall bounce-back</span></h3>
+      <canvas id="lbmCanvas" class="field" width="48" height="48" aria-label="LBM speed field"></canvas>
+      <div class="stats" id="lbmStats"></div>
+    </section>
+  </div>
+  <div class="colorbar"><span>|u| / U<sub>lid</sub> 0</span><i id="bar"></i><span>1</span></div>
+
+  <h2>Centreline profiles</h2>
+  <div class="grid two">
+    <section class="card"><h3>u along the vertical centreline (x = ½)</h3><div id="chartU"></div></section>
+    <section class="card"><h3>v along the horizontal centreline (y = ½)</h3><div id="chartV"></div></section>
+  </div>
+  <details><summary>Table view of the profiles</summary><div id="table"></div></details>
+
+  <h2>How to read this</h2>
+  <div class="grid">
+    <div class="card"><p><b>Same physics, different unknowns.</b> The FVM solves for face velocities and cell pressures; the LBM evolves 9 distributions per node and recovers velocity as a moment. Node counts are not equivalent degrees of freedom.</p></div>
+    <div class="card"><p><b>Compare at matched error.</b> Watch the max-deviation number, not the pretty colours. Only once both are below the same tolerance does a wall-clock comparison mean anything.</p></div>
+    <div class="card"><p><b>Library use.</b> <code>import { CavityFVM } from './lib/fvm.js'</code> and <code>import { lidDrivenCavity } from './lib/lbm.js'</code> — both are dependency-free ES modules that also run under Node for regression tests.</p></div>
+  </div>
+</main>
+<script type="module">
+import { chrome, drawField, LUT, rampCss, lineChart, seriesTable } from '../assets/ui.js';
+import { CavityFVM } from '../lib/fvm.js';
+import { lidDrivenCavity } from '../lib/lbm.js';
+import { GHIA_RE100_U, GHIA_RE100_V, maxDeviation } from '../lib/reference.js';
+chrome('..');
+document.getElementById('bar').style.background = rampCss('sequential');
+
+const $ = (id) => document.getElementById(id);
+let fvm, lbm, running = true, lbmMass0, fvmMs = 0, lbmMs = 0, lastChart = 0, lbmPrevU = null, lbmPrevT = 0, lbmChange = Infinity;
+const U_LID = 0.1;
+
+function reset() {
+  const re = +$('re').value;
+  fvm = new CavityFVM({ n: +$('fvmN').value, re });
+  lbm = lidDrivenCavity({ n: +$('lbmN').value, re, uLid: U_LID });
+  lbmMass0 = lbm.totalMass();
+  fvmMs = lbmMs = 0; lbmPrevU = null; lbmPrevT = 0; lbmChange = Infinity;
+  $('reNote').hidden = re === 100;
+}
+
+function lbmProfiles() {
+  const n = lbm.nx, cu = [[0, 0]], cv = [[0, 0]];
+  for (let y = 0; y < n; y++) cu.push([(y + 0.5) / n, (0.5 * (lbm.ux[y * n + (n >> 1) - 1] + lbm.ux[y * n + (n >> 1)])) / U_LID]);
+  for (let x = 0; x < n; x++) cv.push([(x + 0.5) / n, (0.5 * (lbm.uy[((n >> 1) - 1) * n + x] + lbm.uy[(n >> 1) * n + x])) / U_LID]);
+  cu.push([1, 1]); cv.push([1, 0]);
+  return { cu, cv };
+}
+
+const stat = (k, v, cls = '') => `<div class="stat"><div class="k">${k}</div><div class="v ${cls}">${v}</div></div>`;
+const verdict = (dev) => dev < 0.02 ? `<span class="status good">✓ ${dev.toFixed(4)}</span>` : dev < 0.05 ? `<span class="status warn">▲ ${dev.toFixed(4)}</span>` : `<span class="status bad">✕ ${dev.toFixed(4)}</span>`;
+
+function render(now) {
+  const re100 = +$('re').value === 100;
+  const n = fvm.n;
+  drawField($('fvmCanvas'), fvm.speedField(), n, n, { lut: LUT.sequential, min: 0, max: 1 });
+  lbm.moments();
+  const speed = new Float64Array(lbm.nx * lbm.ny);
+  for (let i = 0; i < speed.length; i++) speed[i] = Math.hypot(lbm.ux[i], lbm.uy[i]) / U_LID;
+  drawField($('lbmCanvas'), speed, lbm.nx, lbm.ny, { lut: LUT.sequential, min: 0, max: 1 });
+
+  if (now - lastChart < 400) return;
+  lastChart = now;
+  const fu = fvm.centerlineU().map((p) => [p.y, p.u]);
+  const fv = fvm.centerlineV().map((p) => [p.x, p.v]);
+  const { cu, cv } = lbmProfiles();
+  // Profile change per 1000 lattice steps (independent of frame rate).
+  if (lbmPrevU && lbm.time > lbmPrevT) lbmChange = (Math.max(...cu.map((p, i) => Math.abs(p[1] - lbmPrevU[i][1]))) * 1000) / (lbm.time - lbmPrevT);
+  if (lbm.time > lbmPrevT) { lbmPrevU = cu; lbmPrevT = lbm.time; }
+  const toObj = (pts, a, b) => pts.map((p) => ({ [a]: p[0], [b]: p[1] }));
+  const devF = re100 ? Math.max(maxDeviation(toObj(fu, 'y', 'u'), GHIA_RE100_U, 'y', 'u'), maxDeviation(toObj(fv, 'x', 'v'), GHIA_RE100_V, 'x', 'v')) : NaN;
+  const devL = re100 ? Math.max(maxDeviation(toObj(cu, 'y', 'u'), GHIA_RE100_U, 'y', 'u'), maxDeviation(toObj(cv, 'x', 'v'), GHIA_RE100_V, 'x', 'v')) : NaN;
+  const steadyF = fvm.lastChange < 1e-4, steadyL = lbmChange < 1e-4;
+  $('fvmStats').innerHTML = stat('Physical time', fvm.time.toFixed(2) + ' s') + stat('Steps', fvm.steps.toLocaleString())
+    + stat('Rate of change', fvm.lastChange.toExponential(1), steadyF ? 'status good' : '') + stat('CG iterations', fvm.lastCgIters)
+    + stat('Max |∇·u|', fvm.maxDivergence().toExponential(1)) + stat('Max dev. vs Ghia', re100 ? verdict(devF) : '—')
+    + stat('Compute time', (fvmMs / 1000).toFixed(1) + ' s');
+  $('lbmStats').innerHTML = stat('Lattice steps', lbm.time.toLocaleString()) + stat('τ', lbm.tau.toFixed(3))
+    + stat('Profile change / 1k steps', Number.isFinite(lbmChange) ? lbmChange.toExponential(1) : '—', steadyL ? 'status good' : '')
+    + stat('Mass drift', (lbm.totalMass() / lbmMass0 - 1).toExponential(1)) + stat('Lattice Mach', (U_LID * Math.sqrt(3)).toFixed(3))
+    + stat('Max dev. vs Ghia', re100 ? verdict(devL) : '—') + stat('Compute time', (lbmMs / 1000).toFixed(1) + ' s');
+  const common = { xDomain: [0, 1], width: 520, height: 300 };
+  const uSeries = [
+    { name: 'FVM', color: '--series-1', points: fu },
+    { name: 'LBM', color: '--series-3', points: cu, dashed: true },
+  ];
+  const vSeries = [
+    { name: 'FVM', color: '--series-1', points: fv },
+    { name: 'LBM', color: '--series-3', points: cv, dashed: true },
+  ];
+  if (re100) {
+    uSeries.push({ name: 'Ghia 1982', color: '--series-2', points: GHIA_RE100_U.map((p) => [p.y, p.u]).sort((a, b) => a[0] - b[0]), markers: true, line: false });
+    vSeries.push({ name: 'Ghia 1982', color: '--series-2', points: GHIA_RE100_V.map((p) => [p.x, p.v]).sort((a, b) => a[0] - b[0]), markers: true, line: false });
+  }
+  // Skip redraws under the pointer so the hover tooltip stays readable.
+  if (!$('chartU').matches(':hover')) lineChart($('chartU'), { ...common, series: uSeries, xLabel: 'y', yLabel: 'u / U_lid' });
+  if (!$('chartV').matches(':hover')) lineChart($('chartV'), { ...common, series: vSeries, xLabel: 'x', yLabel: 'v / U_lid' });
+  if ($('table').closest('details').open) seriesTable($('table'), [...uSeries.map((s) => ({ ...s, name: 'u · ' + s.name })), ...vSeries.map((s) => ({ ...s, name: 'v · ' + s.name }))], 'position', 'value');
+}
+
+function frame(now) {
+  if (running) {
+    // Split a ~14 ms budget evenly; stop stepping a solver once it is steady.
+    const budget = 7;
+    let t = performance.now();
+    if (fvm.lastChange >= 1e-5) { do fvm.step(); while (performance.now() - t < budget); fvmMs += performance.now() - t; }
+    t = performance.now();
+    if (lbmChange >= 1e-5) { do lbm.step(20); while (performance.now() - t < budget); lbmMs += performance.now() - t; }
+  }
+  render(now);
+  requestAnimationFrame(frame);
+}
+
+$('toggle').onclick = () => { running = !running; $('toggle').textContent = running ? 'Pause' : 'Resume'; };
+$('reset').onclick = reset;
+for (const id of ['fvmN', 'lbmN', 're']) $(id).onchange = reset;
+reset();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

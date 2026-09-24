@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lattice Unit Converter</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<main>
+  <p class="eyebrow">Acceptance criterion · document the physical-unit conversion</p>
+  <h1>Physical → lattice units</h1>
+  <p class="lede">An LBM run is only as credible as its unit mapping. Enter the physical case and the lattice resolution; the converter reports Reynolds number, relaxation time τ, lattice Mach number and time step, and flags combinations that are unstable or compressibility-polluted.</p>
+
+  <div class="grid two">
+    <section class="card">
+      <h3>Physical case</h3>
+      <div class="controls">
+        <label>Fluid <select id="fluid"></select></label>
+        <label>Length L [m] <input id="L" type="number" value="1.6" step="0.1" min="0.001"></label>
+        <label>Speed U [m/s] <input id="U" type="number" value="1.5" step="0.1" min="0.0001"></label>
+      </div>
+      <h3>Lattice</h3>
+      <div class="controls">
+        <label>Nodes across L <input id="N" type="number" value="400" step="10" min="4"></label>
+        <label>Lattice velocity u_lb <input id="ulb" type="range" min="0.01" max="0.3" step="0.005" value="0.05"><span id="ulbOut"></span></label>
+      </div>
+      <p class="note">Viscosity ν = <span id="nuOut"></span> m²/s · density ρ = <span id="rhoOut"></span> kg/m³</p>
+    </section>
+    <section class="card">
+      <h3>Result</h3>
+      <div class="stats" id="stats"></div>
+      <div id="warnings"></div>
+      <p class="note" id="advice"></p>
+    </section>
+  </div>
+
+  <h2>τ as resolution grows</h2>
+  <section class="card"><div id="chart"></div>
+    <p class="note">At vehicle Reynolds numbers (10⁶–10⁷) a resolved BGK lattice would need billions of nodes; practical LBM for such cases relies on wall models and LES/MRT/cumulant collision operators. That cost is part of the fair comparison.</p></section>
+
+  <h2>Use as a library</h2>
+  <pre><code>import { toLattice, FLUIDS } from './lib/units.js';
+const r = toLattice({ length: 1.6, speed: 1.5, nu: FLUIDS.seawater15.nu, cells: 400, uLattice: 0.05 });
+// → { re, dx, dt, nuLattice, tau, mach, warnings, cellsForTau(target) }</code></pre>
+</main>
+<script type="module">
+import { chrome, lineChart } from '../assets/ui.js';
+import { toLattice, FLUIDS } from '../lib/units.js';
+chrome('..');
+const $ = (id) => document.getElementById(id);
+for (const [k, f] of Object.entries(FLUIDS)) $('fluid').add(new Option(f.label, k));
+const stat = (k, v) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`;
+const sci = (x) => (Math.abs(x) >= 1e4 || Math.abs(x) < 1e-2 ? x.toExponential(3) : x.toPrecision(4));
+
+function update() {
+  const fl = FLUIDS[$('fluid').value];
+  const length = +$('L').value, speed = +$('U').value, cells = Math.max(4, +$('N').value), uLattice = +$('ulb').value;
+  $('ulbOut').textContent = uLattice.toFixed(3);
+  $('nuOut').textContent = fl.nu.toExponential(3);
+  $('rhoOut').textContent = fl.rho;
+  if (!(length > 0 && speed > 0)) return;
+  const r = toLattice({ length, speed, nu: fl.nu, cells, uLattice });
+  $('stats').innerHTML = stat('Reynolds', sci(r.re)) + stat('τ', r.tau.toFixed(5)) + stat('ν lattice', sci(r.nuLattice))
+    + stat('Lattice Mach', r.mach.toFixed(3)) + stat('Δx [m]', sci(r.dx)) + stat('Δt [s]', sci(r.dt))
+    + stat('Steps per physical s', sci(r.stepsPerSecond)) + stat('2D nodes (10L×4L box)', sci(40 * cells * cells)) + stat('3D nodes (10L×4L×4L)', sci(160 * cells ** 3));
+  $('warnings').innerHTML = r.warnings.length
+    ? r.warnings.map((w) => `<p class="status ${/unstable|dominates/.test(w) ? 'bad' : 'warn'}">${/unstable|dominates/.test(w) ? '✕' : '▲'} ${w}</p>`).join('')
+    : '<p class="status good">✓ τ and Mach are in the comfortable BGK range.</p>';
+  $('advice').textContent = `Nodes across L needed for τ = 0.55: ${r.cellsForTau(0.55).toLocaleString()} · for τ = 0.6: ${r.cellsForTau(0.6).toLocaleString()}`;
+  const pts = [];
+  for (let e = 1; e <= 5; e += 0.1) {
+    const n = 10 ** e;
+    pts.push([e, toLattice({ length, speed, nu: fl.nu, cells: n, uLattice }).tau]);
+  }
+  lineChart($('chart'), { series: [{ name: 'τ', color: '--series-1', points: pts }], xLabel: 'log₁₀(nodes across L)', yLabel: 'τ', band: [0.5, 0.51], fmt: (v) => v.toFixed(5), height: 260, width: 760 });
+}
+for (const id of ['fluid', 'L', 'U', 'N', 'ulb']) $(id).addEventListener('input', update);
+update();
+</script>
+</body>
+</html>
